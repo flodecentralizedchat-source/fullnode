@@ -1,5 +1,5 @@
 # ─── Build stage ──────────────────────────────────────────────────────────────
-FROM rust:1.77-slim-bookworm AS builder
+FROM rust:1.85-slim-bookworm AS builder
 
 # System deps for RocksDB
 RUN apt-get update && apt-get install -y \
@@ -32,7 +32,7 @@ COPY crates/node/Cargo.toml        crates/node/Cargo.toml
 
 # Create stub src files so cargo can resolve deps without full source
 RUN for crate in types common p2p consensus execution statedb rpc mempool sync monitoring dex keymanager indexer; do \
-      mkdir -p crates/$crate/src && echo "// stub" > crates/$crate/src/lib.rs; \
+    mkdir -p crates/$crate/src && echo "// stub" > crates/$crate/src/lib.rs; \
     done && \
     mkdir -p crates/node/src && \
     echo "fn main(){}" > crates/node/src/main.rs && \

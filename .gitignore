@@ -3,3 +3,4 @@ Cargo.lock
 .env
 *.log
 data/
+recommend-2-run.md
