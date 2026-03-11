@@ -1,0 +1,175 @@
+---
+# ClusterIP for internal clients
+apiVersion: v1
+kind: Service
+metadata:
+  name: rpc-internal
+  namespace: fullnode
+  labels:
+    app: rpc
+spec:
+  selector:
+    app: rpc
+  ports:
+    - name: http-rpc
+      port: 8545
+      targetPort: 8545
+    - name: ws-rpc
+      port: 8546
+      targetPort: 8546
+
+---
+# LoadBalancer for external JSON-RPC access
+apiVersion: v1
+kind: Service
+metadata:
+  name: rpc-external
+  namespace: fullnode
+  labels:
+    app: rpc
+  annotations:
+    # AWS NLB — swap annotation for GCP/Azure
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  selector:
+    app: rpc
+  ports:
+    - name: http-rpc
+      port: 8545
+      targetPort: 8545
+    - name: ws-rpc
+      port: 8546
+      targetPort: 8546
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rpc
+  namespace: fullnode
+  labels:
+    app: rpc
+spec:
+  # Initial replica count; HPA will override
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rpc
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0    # zero-downtime rolling deploys
+  template:
+    metadata:
+      labels:
+        app: rpc
+        role: rpc-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8545"
+        prometheus.io/path:   "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      # Spread across zones
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: rpc
+      containers:
+        - name: fullnode
+          image: your-registry/fullnode:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SYNC_MODE
+              value: "snap"
+            - name: VALIDATOR_ENABLED
+              value: "false"
+            - name: HTTP_ENABLED
+              value: "true"
+            - name: DATA_DIR
+              value: "/data"
+          envFrom:
+            - configMapRef:
+                name: fullnode-config
+          ports:
+            - containerPort: 8545
+              name: http-rpc
+            - containerPort: 8546
+              name: ws-rpc
+            - containerPort: 30303
+              name: p2p
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8545
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8545
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu:    "500m"
+              memory: "1Gi"
+            limits:
+              cpu:    "4"
+              memory: "8Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}   # RPC nodes use snap sync; no persistent disk needed
+
+---
+# ── Horizontal Pod Autoscaler ──────────────────────────────────────────────────
+# Scales RPC replicas 2–10 based on CPU and memory utilisation.
+# Install metrics-server first: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rpc-hpa
+  namespace: fullnode
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rpc
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60   # scale up when avg CPU > 60%
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60      # add at most 2 pods per minute
+    scaleDown:
+      stabilizationWindowSeconds: 300   # wait 5 min before scaling down
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

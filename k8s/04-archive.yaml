@@ -1,0 +1,91 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: archive
+  namespace: fullnode
+  labels:
+    app: archive
+spec:
+  selector:
+    app: archive
+  ports:
+    - name: http-rpc
+      port: 8545
+      targetPort: 8545
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: archive
+  namespace: fullnode
+spec:
+  serviceName: archive
+  replicas: 1
+  selector:
+    matchLabels:
+      app: archive
+  template:
+    metadata:
+      labels:
+        app: archive
+        role: archive
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8545"
+        prometheus.io/path:   "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 120   # archive needs longer to flush
+      containers:
+        - name: fullnode
+          image: your-registry/fullnode:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SYNC_MODE
+              value: "archive"
+            - name: VALIDATOR_ENABLED
+              value: "false"
+            - name: HTTP_ENABLED
+              value: "true"
+            - name: DATA_DIR
+              value: "/data"
+          envFrom:
+            - configMapRef:
+                name: fullnode-config
+          ports:
+            - containerPort: 8545
+              name: http-rpc
+            - containerPort: 30303
+              name: p2p
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8545
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8545
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu:    "1"
+              memory: "4Gi"
+            limits:
+              cpu:    "4"
+              memory: "16Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "standard"   # use a high-throughput class in production
+        resources:
+          requests:
+            storage: 5Ti

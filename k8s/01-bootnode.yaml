@@ -1,0 +1,93 @@
+---
+# Headless service for stable DNS names: bootnode-0.bootnode.fullnode.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: bootnode
+  namespace: fullnode
+  labels:
+    app: bootnode
+spec:
+  clusterIP: None      # headless
+  selector:
+    app: bootnode
+  ports:
+    - name: p2p-tcp
+      port: 30303
+      protocol: TCP
+    - name: p2p-udp
+      port: 30303
+      protocol: UDP
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bootnode
+  namespace: fullnode
+spec:
+  serviceName: bootnode
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bootnode
+  template:
+    metadata:
+      labels:
+        app: bootnode
+        role: bootnode
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: fullnode
+          image: your-registry/fullnode:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SYNC_MODE
+              value: "full"
+            - name: VALIDATOR_ENABLED
+              value: "false"
+            - name: HTTP_ENABLED
+              value: "false"
+            - name: BOOT_NODES
+              value: ""           # bootnode has no upstream peers
+            - name: DATA_DIR
+              value: "/data"
+          envFrom:
+            - configMapRef:
+                name: fullnode-config
+          ports:
+            - containerPort: 30303
+              name: p2p-tcp
+              protocol: TCP
+            - containerPort: 30303
+              name: p2p-udp
+              protocol: UDP
+          readinessProbe:
+            tcpSocket:
+              port: 30303
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 30303
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "512Mi"
+            limits:
+              cpu:    "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

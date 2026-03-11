@@ -1,0 +1,50 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    network: 'local-testnet'
+
+scrape_configs:
+
+  - job_name: 'fullnode-validators'
+    static_configs:
+      - targets:
+          - 'validator-1:8545'
+          - 'validator-2:8545'
+          - 'validator-3:8545'
+          - 'validator-4:8545'
+        labels:
+          role: 'validator'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'fullnode-rpc'
+    static_configs:
+      - targets:
+          - 'rpc:8545'
+        labels:
+          role: 'rpc-gateway'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  - job_name: 'fullnode-archive'
+    static_configs:
+      - targets:
+          - 'archive:8545'
+        labels:
+          role: 'archive'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'fullnode-bootnode'
+    static_configs:
+      - targets:
+          - 'bootnode:9100'
+        labels:
+          role: 'bootnode'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

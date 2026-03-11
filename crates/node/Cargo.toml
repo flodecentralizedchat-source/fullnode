@@ -1,0 +1,33 @@
+[package]
+name = "fullnode-node"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "fullnode"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+clap = { workspace = true }
+fullnode-p2p       = { path = "../p2p" }
+fullnode-rpc       = { path = "../rpc" }
+fullnode-statedb   = { path = "../statedb" }
+fullnode-consensus = { path = "../consensus" }
+fullnode-mempool   = { path = "../mempool" }
+fullnode-monitoring = { path = "../monitoring" }
+fullnode-sync      = { path = "../sync" }
+fullnode-keymanager = { path = "../keymanager" }
+fullnode-indexer   = { path = "../indexer" }
+rand = { workspace = true }

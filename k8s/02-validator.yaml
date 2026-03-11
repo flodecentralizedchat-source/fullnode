@@ -1,0 +1,103 @@
+---
+# Headless service for validator peer addressing
+apiVersion: v1
+kind: Service
+metadata:
+  name: validator
+  namespace: fullnode
+  labels:
+    app: validator
+spec:
+  clusterIP: None
+  selector:
+    app: validator
+  ports:
+    - name: p2p
+      port: 30303
+      protocol: TCP
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: validator
+  namespace: fullnode
+spec:
+  serviceName: validator
+  replicas: 4
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: validator
+  template:
+    metadata:
+      labels:
+        app: validator
+        role: validator
+      annotations:
+        prometheus.io/scrape: "false"   # validators don't expose RPC
+    spec:
+      terminationGracePeriodSeconds: 60
+      # Spread across nodes for fault isolation
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: validator
+      containers:
+        - name: fullnode
+          image: your-registry/fullnode:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SYNC_MODE
+              value: "full"
+            - name: VALIDATOR_ENABLED
+              value: "true"
+            - name: HTTP_ENABLED
+              value: "false"
+            - name: DATA_DIR
+              value: "/data"
+          envFrom:
+            - configMapRef:
+                name: fullnode-config
+          ports:
+            - containerPort: 30303
+              name: p2p
+          readinessProbe:
+            tcpSocket:
+              port: 30303
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 30303
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu:    "500m"
+              memory: "1Gi"
+            limits:
+              cpu:    "2"
+              memory: "4Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: keystore
+              mountPath: /keystore
+              readOnly: true
+      volumes:
+        - name: keystore
+          secret:
+            secretName: validator-keystores
+            optional: true
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 500Gi

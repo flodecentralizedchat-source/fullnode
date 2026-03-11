@@ -1,0 +1,253 @@
+version: "3.9"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Fullnode Local Testnet — 4 validators + 1 RPC gateway + 1 monitoring node
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Usage:
+#   docker compose up --build          # start everything
+#   docker compose up --build rpc      # start only RPC + its dependencies
+#   docker compose logs -f validator-1 # tail a validator
+#   docker compose down -v             # stop + remove volumes
+
+x-validator-base: &validator-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment:
+    RUST_LOG: "info,fullnode=debug"
+    CHAIN_ID: "31337"
+    SYNC_MODE: "full"
+    VALIDATOR_ENABLED: "true"
+    MAX_PEERS: "25"
+    BOOT_NODES: "bootnode:30303"
+  depends_on:
+    bootnode:
+      condition: service_healthy
+
+services:
+
+  # ── Bootnode ────────────────────────────────────────────────────────────────
+  bootnode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fullnode-bootnode
+    hostname: bootnode
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "info"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "full"
+      VALIDATOR_ENABLED: "false"
+      MAX_PEERS: "100"
+      BOOT_NODES: ""
+      HTTP_ENABLED: "false"
+    ports:
+      - "30303:30303/tcp"
+      - "30303:30303/udp"
+    volumes:
+      - bootnode-data:/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "30303"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - fullnode-net
+
+  # ── Validators ──────────────────────────────────────────────────────────────
+  validator-1:
+    <<: *validator-base
+    container_name: fullnode-validator-1
+    hostname: validator-1
+    environment:
+      RUST_LOG: "info,fullnode=debug"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "full"
+      VALIDATOR_ENABLED: "true"
+      MAX_PEERS: "25"
+      BOOT_NODES: "bootnode:30303"
+      HTTP_ENABLED: "false"
+    ports:
+      - "30311:30303"
+    volumes:
+      - validator-1-data:/data
+    networks:
+      - fullnode-net
+
+  validator-2:
+    <<: *validator-base
+    container_name: fullnode-validator-2
+    hostname: validator-2
+    environment:
+      RUST_LOG: "info"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "full"
+      VALIDATOR_ENABLED: "true"
+      MAX_PEERS: "25"
+      BOOT_NODES: "bootnode:30303"
+      HTTP_ENABLED: "false"
+    ports:
+      - "30312:30303"
+    volumes:
+      - validator-2-data:/data
+    networks:
+      - fullnode-net
+
+  validator-3:
+    <<: *validator-base
+    container_name: fullnode-validator-3
+    hostname: validator-3
+    environment:
+      RUST_LOG: "info"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "full"
+      VALIDATOR_ENABLED: "true"
+      MAX_PEERS: "25"
+      BOOT_NODES: "bootnode:30303"
+      HTTP_ENABLED: "false"
+    ports:
+      - "30313:30303"
+    volumes:
+      - validator-3-data:/data
+    networks:
+      - fullnode-net
+
+  validator-4:
+    <<: *validator-base
+    container_name: fullnode-validator-4
+    hostname: validator-4
+    environment:
+      RUST_LOG: "info"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "full"
+      VALIDATOR_ENABLED: "true"
+      MAX_PEERS: "25"
+      BOOT_NODES: "bootnode:30303"
+      HTTP_ENABLED: "false"
+    ports:
+      - "30314:30303"
+    volumes:
+      - validator-4-data:/data
+    networks:
+      - fullnode-net
+
+  # ── RPC Gateway ─────────────────────────────────────────────────────────────
+  rpc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fullnode-rpc
+    hostname: rpc
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "info"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "snap"
+      VALIDATOR_ENABLED: "false"
+      MAX_PEERS: "50"
+      BOOT_NODES: "bootnode:30303"
+      HTTP_ENABLED: "true"
+      HTTP_ADDR: "0.0.0.0:8545"
+      WS_ADDR: "0.0.0.0:8546"
+    ports:
+      - "8545:8545"   # HTTP JSON-RPC
+      - "8546:8546"   # WebSocket JSON-RPC
+    volumes:
+      - rpc-data:/data
+    depends_on:
+      bootnode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8545/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fullnode-net
+
+  # ── Archive Node ────────────────────────────────────────────────────────────
+  archive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fullnode-archive
+    hostname: archive
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "info"
+      CHAIN_ID: "31337"
+      SYNC_MODE: "archive"
+      VALIDATOR_ENABLED: "false"
+      MAX_PEERS: "25"
+      BOOT_NODES: "bootnode:30303"
+      HTTP_ENABLED: "true"
+      HTTP_ADDR: "0.0.0.0:8545"
+    ports:
+      - "8547:8545"   # archive RPC (internal use)
+    volumes:
+      - archive-data:/data
+    depends_on:
+      bootnode:
+        condition: service_healthy
+    networks:
+      - fullnode-net
+
+  # ── Prometheus ──────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: fullnode-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    networks:
+      - fullnode-net
+
+  # ── Grafana ─────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: fullnode-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: fullnode
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - fullnode-net
+
+networks:
+  fullnode-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  bootnode-data:
+  validator-1-data:
+  validator-2-data:
+  validator-3-data:
+  validator-4-data:
+  rpc-data:
+  archive-data:
+  prometheus-data:
+  grafana-data:

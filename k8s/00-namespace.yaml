@@ -1,0 +1,22 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fullnode
+  labels:
+    app.kubernetes.io/name: fullnode
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fullnode-config
+  namespace: fullnode
+data:
+  CHAIN_ID:        "1"
+  MAX_PEERS:       "50"
+  LISTEN_ADDR:     "0.0.0.0:30303"
+  HTTP_ADDR:       "0.0.0.0:8545"
+  WS_ADDR:         "0.0.0.0:8546"
+  # Comma-separated stable bootnode addresses
+  BOOT_NODES:      "bootnode-0.bootnode.fullnode.svc.cluster.local:30303"
